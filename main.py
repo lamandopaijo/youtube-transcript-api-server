@@ -1,27 +1,50 @@
 from fastapi import FastAPI, HTTPException
-from youtube_transcript_api import YouTubeTranscriptApi
+import requests
+import re
+import html as html_lib
 
 app = FastAPI()
 
 @app.get("/api/transcript")
 def get_transcript(video_id: str):
     try:
-        # 🔥 TAKTIK SAPU JAGAT: Daftar prioritas bahasa (Dari Indonesia sampai bahasa dunia)
-        # Mesin akan mencoba dari kiri ke kanan. Jika 'id' gagal, coba 'en', dst.
-        bahasa_prioritas = [
-            'id', 'en', 'ms', 'ja', 'ko', 'zh-Hans', 'zh-Hant', 
-            'hi', 'th', 'vi', 'ru', 'fr', 'de', 'es', 'pt', 
-            'ar', 'tr', 'it', 'nl', 'pl', 'tl'
-        ]
+        # 1. Menyamar sebagai Browser Google Chrome dari PC
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
         
-        # Sedot naskah langsung tanpa menggunakan list_transcripts yang error!
-        transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=bahasa_prioritas)
+        # Buka halaman YouTube
+        resp = requests.get(url, headers=headers)
+        html = resp.text
         
-        # Gabungkan teksnya menjadi satu paragraf panjang
-        full_text = " ".join([item['text'] for item in transcript_data])
+        # 2. Taktik Sniper: Cari link rahasia API Subtitle di dalam tumpukan kode YouTube
+        match = re.search(r'"baseUrl":"(https://www\.youtube\.com/api/timedtext[^"]+)"', html)
+        if not match:
+            raise Exception("Video ini tidak memiliki Subtitle/CC sama sekali.")
+            
+        # 3. Bersihkan Link (YouTube sering mengunci simbol & menjadi \u0026)
+        raw_url = match.group(1)
+        clean_url = raw_url.replace("\\u0026", "&").replace("\\/", "/")
         
+        # 4. Buka brankas XML naskahnya
+        xml_resp = requests.get(clean_url)
+        xml_data = xml_resp.text
+        
+        # 5. Sedot semua teks di antara tag <text> ... </text>
+        teks_kotor = re.findall(r'>([^<]+)</text>', xml_data)
+        
+        # 6. Bersihkan simbol HTML aneh (seperti &amp; atau &#39;)
+        teks_bersih = [html_lib.unescape(t) for t in teks_kotor]
+        
+        # Gabungkan menjadi satu naskah panjang
+        full_text = " ".join(teks_bersih)
+        
+        if not full_text.strip():
+            raise Exception("Naskah kosong.")
+            
         return {"status": "success", "transcript": full_text}
         
     except Exception as e:
-        # Error hanya akan muncul jika video SAMA SEKALI tidak punya subtitle dari 20 bahasa di atas
         raise HTTPException(status_code=400, detail=f"Gagal menarik naskah: {str(e)}")
