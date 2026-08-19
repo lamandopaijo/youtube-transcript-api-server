@@ -3,23 +3,25 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 app = FastAPI()
 
-# 👉 PERUBAHAN KRUSIAL: Kita harus membuat/menginisialisasi objek "mesin" utamanya dulu di versi terbaru ini
-yt_api = YouTubeTranscriptApi()
-
 @app.get("/api/transcript")
 def get_transcript(video_id: str):
     try:
-        # Gunakan mesin yt_api yang sudah diinisialisasi
-        transcript_list = yt_api.list_transcripts(video_id)
+        # 🔥 TAKTIK SAPU JAGAT: Daftar prioritas bahasa (Dari Indonesia sampai bahasa dunia)
+        # Mesin akan mencoba dari kiri ke kanan. Jika 'id' gagal, coba 'en', dst.
+        bahasa_prioritas = [
+            'id', 'en', 'ms', 'ja', 'ko', 'zh-Hans', 'zh-Hant', 
+            'hi', 'th', 'vi', 'ru', 'fr', 'de', 'es', 'pt', 
+            'ar', 'tr', 'it', 'nl', 'pl', 'tl'
+        ]
         
-        # Ambil bahasa APA SAJA yang pertama kali ditemukan di video tersebut
-        transcript = next(iter(transcript_list))
+        # Sedot naskah langsung tanpa menggunakan list_transcripts yang error!
+        transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=bahasa_prioritas)
         
-        # Sedot teksnya dan gabungkan menjadi satu kalimat utuh
-        full_text = " ".join([item['text'] for item in transcript.fetch()])
+        # Gabungkan teksnya menjadi satu paragraf panjang
+        full_text = " ".join([item['text'] for item in transcript_data])
         
         return {"status": "success", "transcript": full_text}
         
     except Exception as e:
-        # Jika benar-benar gagal (misal video tak ada suaranya)
+        # Error hanya akan muncul jika video SAMA SEKALI tidak punya subtitle dari 20 bahasa di atas
         raise HTTPException(status_code=400, detail=f"Gagal menarik naskah: {str(e)}")
